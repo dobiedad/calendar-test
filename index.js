@@ -3,27 +3,23 @@ var h = hyperdom.html;
 var npmCalendar= require('hyperdom-calendar');
 var localCalendar= require('./local-hyperdom-calendar');
 
-var model = {localCalendar:{},npmCalendar:{}};
+var model = {localCalendar:{},localCalendar2:{},npmCalendar:{}};
 
 function render(model) {
   return h('div',
     h('div',
       h('h1','NPM'),
-      renderNpmCalendar(model)
+      npmCalendar(model.npmCalendar)
     ),
     h('div',
       h('h1','Local'),
-      renderLocalCalendar(model)
+      localCalendar(model.localCalendar)
+    ),
+    h('div',
+      h('h1','Local 2'),
+      localCalendar(model.localCalendar2)
     )
   )
-}
-
-function renderNpmCalendar() {
-  return npmCalendar(model.npmCalendar)
-}
-
-function renderLocalCalendar() {
-  return localCalendar(model.localCalendar)
 }
 
 hyperdom.append(document.body, render, model);

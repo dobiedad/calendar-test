@@ -12,7 +12,7 @@
   "dependencies": {
     "express": "^4.15.2",
     "hyperdom": "^0.6.0",
-    "hyperdom-calendar": "^1.1.1",
+    "hyperdom-calendar": "^1.1.2",
     "watchify": "^3.9.0"
   }
 }
