@@ -88,7 +88,7 @@ function render(model) {
 
 hyperdom.append(document.body, render, model);
 
-},{"./local-hyperdom-calendar":3,"hyperdom":36,"hyperdom-calendar":8}],3:[function(require,module,exports){
+},{"./local-hyperdom-calendar":3,"hyperdom":14,"hyperdom-calendar":8}],3:[function(require,module,exports){
 var hyperdom = require('hyperdom')
 var h = hyperdom.html
 var Calendar = require('./calendar');
@@ -172,7 +172,7 @@ function daysInMonth(month,year) {
 
 module.exports = HyperdomCalendar
 
-},{"./calendar":1,"hyperdom":36}],4:[function(require,module,exports){
+},{"./calendar":1,"hyperdom":14}],4:[function(require,module,exports){
 
 },{}],5:[function(require,module,exports){
 /*!
@@ -389,1360 +389,6 @@ function daysInMonth(month,year) {
 module.exports = HyperdomCalendar
 
 },{"./calendar":7,"hyperdom":14}],9:[function(require,module,exports){
-var listener = require('./listener');
-var binding = require('./binding')
-
-module.exports = function(tag, attributes, children) {
-  var type = inputType(tag, attributes)
-  var bind = inputTypeBindings[type] || bindTextInput;
-
-  var bindingAttr = binding(attributes.binding);
-  bind(attributes, children, bindingAttr.get, bindingAttr.set);
-}
-
-var inputTypeBindings = {
-  text: bindTextInput,
-
-  textarea: bindTextInput,
-
-  checkbox: function (attributes, children, get, set) {
-    attributes.checked = get();
-
-    attachEventHandler(attributes, 'onclick', function (ev) {
-      attributes.checked = ev.target.checked;
-      set(ev.target.checked);
-    });
-  },
-
-  radio: function (attributes, children, get, set) {
-    var value = attributes.value;
-    attributes.checked = get() == attributes.value;
-    attributes.on_hyperdomsyncchecked = listener(function (event) {
-      attributes.checked = event.target.checked;
-    });
-
-    attachEventHandler(attributes, 'onclick', function (event) {
-      var name = event.target.name;
-      if (name) {
-        var inputs = document.getElementsByName(name);
-        for (var i = 0, l = inputs.length; i < l; i++) {
-          inputs[i].dispatchEvent(customEvent('_hyperdomsyncchecked'));
-        }
-      }
-      set(value);
-    });
-  },
-
-  select: function (attributes, children, get, set) {
-    var currentValue = get();
-
-    var options = children.filter(function (child) {
-      return child.tagName.toLowerCase() == 'option';
-    });
-
-    var values = [];
-    var selectedIndex;
-
-    for(var n = 0; n < options.length; n++) {
-      var option = options[n];
-      var hasValue = option.properties.hasOwnProperty('value');
-      var value = option.properties.value;
-      var text = option.children.map(function (x) { return x.text; }).join('');
-
-      values.push(hasValue? value: text);
-
-      var selected = value == currentValue || text == currentValue;
-
-      if (selected) {
-        selectedIndex = n;
-      }
-
-      option.properties.selected = selected;
-      option.properties.value = n;
-    }
-
-    if (selectedIndex !== undefined) {
-      attributes.selectedIndex = selectedIndex;
-    }
-
-    attachEventHandler(attributes, 'onchange', function (ev) {
-      attributes.selectedIndex = ev.target.selectedIndex;
-      set(values[ev.target.value]);
-    });
-  },
-
-  file: function (attributes, children, get, set) {
-    var multiple = attributes.multiple;
-
-    attachEventHandler(attributes, 'onchange', function (ev) {
-      if (multiple) {
-        set(ev.target.files);
-      } else {
-        set(ev.target.files[0]);
-      }
-    });
-  }
-};
-
-function inputType(selector, attributes) {
-  if (/^textarea\b/i.test(selector)) {
-    return 'textarea';
-  } else if (/^select\b/i.test(selector)) {
-    return 'select';
-  } else {
-    return attributes.type || 'text';
-  }
-}
-
-function bindTextInput(attributes, children, get, set) {
-  var textEventNames = ['onkeyup', 'oninput', 'onpaste', 'textInput'];
-
-  var bindingValue = get();
-  if (!(bindingValue instanceof Error)) {
-    attributes.value = bindingValue != undefined? bindingValue: '';
-  }
-
-  attachEventHandler(attributes, textEventNames, function (ev) {
-    if (get() != ev.target.value) {
-      set(ev.target.value);
-    }
-  });
-}
-
-function attachEventHandler(attributes, eventNames, handler) {
-  if (eventNames instanceof Array) {
-    for (var n = 0; n < eventNames.length; n++) {
-      insertEventHandler(attributes, eventNames[n], handler);
-    }
-  } else {
-    insertEventHandler(attributes, eventNames, handler);
-  }
-}
-
-function insertEventHandler(attributes, eventName, handler) {
-  var previousHandler = attributes[eventName];
-  if (previousHandler) {
-    attributes[eventName] = sequenceFunctions(handler, previousHandler);
-  } else {
-    attributes[eventName] = handler;
-  }
-}
-
-function sequenceFunctions(handler1, handler2) {
-  return function (ev) {
-    handler1(ev);
-    return handler2(ev);
-  };
-}
-
-function customEvent(name) {
-  if (typeof Event == 'function') {
-    return new Event(name);
-  } else {
-    var event = document.createEvent('Event');
-    event.initEvent(name, false, false);
-    return event;
-  }
-}
-
-},{"./binding":10,"./listener":16}],10:[function(require,module,exports){
-var refreshify = require('./refreshify');
-var meta = require('./meta');
-
-module.exports = function(b, options) {
-  var binding = b
-
-  if (b instanceof Array) {
-    binding = bindingObject.apply(undefined, b)
-  } else if (b instanceof Object && (typeof b.set === 'function' || typeof b.get === 'function')) {
-    binding = b
-  } else {
-    throw Error('hyperdom bindings must be either an array [object, property, setter] or an object { get(), set(value) }, instead binding was: ' + JSON.stringify(b))
-  }
-
-  binding.set = refreshify(binding.set, options);
-
-  return binding;
-}
-
-function bindingObject(model, property, setter) {
-  var _meta;
-
-  return {
-    get: function () {
-      return model[property];
-    },
-
-    set: function (value) {
-      model[property] = value;
-      if (setter) {
-        return setter(value)
-      }
-    },
-
-    meta: function() {
-      return _meta || (_meta = meta(model, property));
-    }
-  };
-}
-
-},{"./meta":17,"./refreshify":23}],11:[function(require,module,exports){
-var domComponent = require('./domComponent');
-var hyperdomMeta = require('./meta');
-var render = require('./render');
-
-function Component(model, options) {
-  var currentRender = render.currentRender();
-
-  this.isComponent = options && options.hasOwnProperty('component') && options.component
-  this.currentRender = currentRender;
-  this.model = model;
-  this.key = model.renderKey;
-  this.component = undefined;
-  this.mount = currentRender.mount;
-}
-
-Component.prototype.type = 'Widget';
-
-Component.prototype.init = function () {
-  var self = this;
-
-  var vdom = this.render();
-
-  var meta = hyperdomMeta(this.model);
-  meta.components.add(this);
-
-  this.component = domComponent.create();
-  var element = this.component.create(vdom);
-
-  if (self.model.onbeforeadd) {
-    self.model.onbeforeadd()
-  }
-
-  if (self.model.onbeforeadd) {
-    self.model.onbeforerender()
-  }
-
-  if (self.model.onadd || self.model.onrender) {
-    this.currentRender.finished.then(function () {
-      if (self.model.onadd) {
-        self.model.onadd(self.component.element);
-      }
-      if (self.model.onrender) {
-        self.model.onrender(self.component.element);
-      }
-    });
-  }
-
-  if (self.model.detached) {
-    return document.createTextNode('');
-  } else {
-    return element;
-  }
-};
-
-function beforeUpdate(model, element) {
-  if (model.onbeforeupdate) {
-    model.onbeforeupdate(element)
-  }
-
-  if (model.onbeforerender) {
-    model.onbeforerender(element)
-  }
-}
-
-function afterUpdate(model, element, oldElement) {
-  if (model.onupdate) {
-    model.onupdate(element, oldElement);
-  }
-
-  if (model.onrender) {
-    model.onrender(element, oldElement);
-  }
-}
-
-Component.prototype.update = function (previous) {
-  var self = this;
-
-  if (this.isComponent) {
-    var keys = Object.keys(this.model);
-    for(var n = 0; n < keys.length; n++) {
-      var key = keys[n];
-      previous.model[key] = self.model[key];
-    }
-    this.model = previous.model;
-  }
-
-
-  if (self.model.onupdate || self.model.onrender) {
-    this.currentRender.finished.then(function () {
-      afterUpdate(self.model, self.component.element, oldElement)
-    });
-  }
-
-  this.component = previous.component;
-  var oldElement = this.component.element
-
-  beforeUpdate(this.model, oldElement)
-
-  var element = this.component.update(this.render());
-
-  if (self.model.detached) {
-    return document.createTextNode('');
-  } else {
-    return element;
-  }
-};
-
-Component.prototype.render = function () {
-  return this.mount.renderComponent(this.model);
-};
-
-Component.prototype.refresh = function () {
-  var oldElement = this.component.element
-
-  beforeUpdate(this.model, oldElement)
-  this.component.update(this.render());
-  afterUpdate(this.model, this.component.element, oldElement)
-};
-
-Component.prototype.destroy = function (element) {
-  var self = this;
-
-  var meta = hyperdomMeta(this.model);
-  meta.components.delete(this);
-
-  if (self.model.onbeforeremove) {
-    self.model.onbeforeremove(element)
-  }
-
-  if (self.model.onremove) {
-    this.currentRender.finished.then(function () {
-      self.model.onremove(element);
-    });
-  }
-
-  this.component.destroy();
-};
-
-module.exports = Component;
-
-},{"./domComponent":13,"./meta":17,"./render":24}],12:[function(require,module,exports){
-function deprecationWarning() {
-  var warningIssued = false;
-
-  return function (arg) {
-    if (!warningIssued) {
-      console.warn(arg);
-      warningIssued = true;
-    }
-  };
-}
-
-module.exports = {
-  refresh: deprecationWarning(),
-  currentRender: deprecationWarning(),
-  component: deprecationWarning(),
-  renderFunction: deprecationWarning(),
-  refreshAfter: deprecationWarning(),
-  norefresh: deprecationWarning(),
-  mapBinding: deprecationWarning()
-};
-
-},{}],13:[function(require,module,exports){
-var createElement = require('virtual-dom/create-element');
-var diff = require('virtual-dom/diff');
-var patch = require('virtual-dom/patch');
-var toVdom = require('./toVdom');
-var isVdom = require('./isVdom');
-
-function DomComponent(options) {
-  this.document = options && options.document;
-}
-
-function prepareVdom(object) {
-  var vdom = toVdom(object);
-  if (!isVdom(vdom)) {
-    throw new Error('expected render to return vdom');
-  } else {
-    return vdom;
-  }
-}
-
-DomComponent.prototype.create = function (vdom) {
-  this.vdom = prepareVdom(vdom);
-  return this.element = createElement(this.vdom, {document: this.document});
-};
-
-DomComponent.prototype.merge = function (vdom, element) {
-  this.vdom = prepareVdom(vdom);
-  return this.element = element;
-};
-
-DomComponent.prototype.update = function (vdom) {
-  var oldVdom = this.vdom;
-  this.vdom = prepareVdom(vdom);
-  var patches = diff(oldVdom, this.vdom);
-  return this.element = patch(this.element, patches);
-};
-
-DomComponent.prototype.destroy = function (options) {
-  function destroyWidgets(vdom) {
-    if (vdom.type === 'Widget') {
-      vdom.destroy();
-    } else if (vdom.children) {
-      vdom.children.forEach(destroyWidgets);
-    }
-  }
-
-  destroyWidgets(this.vdom);
-
-  if (options && options.removeElement && this.element.parentNode) {
-    this.element.parentNode.removeChild(this.element);
-  }
-};
-
-function domComponent(options) {
-  return new DomComponent(options);
-}
-
-exports.create = domComponent;
-
-},{"./isVdom":15,"./toVdom":28,"virtual-dom/create-element":55,"virtual-dom/diff":56,"virtual-dom/patch":57}],14:[function(require,module,exports){
-var rendering = require('./rendering')
-var refreshify = require('./refreshify')
-var binding = require('./binding')
-var meta = require('./meta');
-var render = require('./render')
-var refreshEventResult = require('./refreshEventResult')
-var Component = require('./component')
-
-exports.html = rendering.html;
-exports.html.refreshify = refreshify
-exports.rawHtml = rendering.rawHtml
-exports.jsx = rendering.jsx;
-exports.attach = rendering.attach;
-exports.replace = rendering.replace;
-exports.append = rendering.append;
-exports.appendVDom = rendering.appendVDom;
-exports.binding = binding;
-exports.meta = meta;
-exports.refreshify = refreshify;
-exports.norefresh = refreshEventResult.norefresh;
-exports.component = function(model) {
-  return new Component(model, {component: true})
-}
-
-exports.currentRender = render.currentRender
-
-},{"./binding":10,"./component":11,"./meta":17,"./refreshEventResult":22,"./refreshify":23,"./render":24,"./rendering":25}],15:[function(require,module,exports){
-var virtualDomVersion = require("virtual-dom/vnode/version")
-
-module.exports = function(x) {
-  var type = x.type;
-  if (type == 'VirtualNode' || type == 'VirtualText') {
-    return x.version == virtualDomVersion;
-  } else {
-    return type == 'Widget' || type == 'Thunk';
-  }
-};
-
-},{"virtual-dom/vnode/version":73}],16:[function(require,module,exports){
-var refreshify = require('./refreshify');
-
-function ListenerHook(listener) {
-  this.listener = refreshify(listener);
-}
-
-ListenerHook.prototype.hook = function (element, propertyName) {
-  element.addEventListener(propertyName.substring(2), this.listener, false);
-};
-
-ListenerHook.prototype.unhook = function (element, propertyName) {
-  element.removeEventListener(propertyName.substring(2), this.listener);
-};
-
-module.exports = function (listener) {
-  return new ListenerHook(listener);
-};
-
-},{"./refreshify":23}],17:[function(require,module,exports){
-module.exports = function (model, property) {
-  var hyperdomMeta = model._hyperdomMeta;
-
-  if (!hyperdomMeta) {
-    hyperdomMeta = {};
-    Object.defineProperty(model, '_hyperdomMeta', {value: hyperdomMeta});
-  }
-
-  if (property) {
-    var meta = hyperdomMeta[property];
-
-    if (!meta) {
-      meta = hyperdomMeta[property] = {};
-    }
-
-    return meta;
-  } else {
-    return hyperdomMeta;
-  }
-};
-
-},{}],18:[function(require,module,exports){
-var hyperdomMeta = require('./meta');
-var runRender = require('./render');
-var Set = require('./set');
-var refreshEventResult = require('./refreshEventResult')
-var vtext = require("virtual-dom/vnode/vtext.js")
-var PropertyHook = require('./propertyHook');
-
-var lastId = 0;
-
-function Mount(model, options) {
-  var win = (options && options.window) || window;
-  var router = typeof options == 'object' && options.hasOwnProperty('router')? options.router: undefined;
-  this.requestRender = (options && options.requestRender) || win.requestAnimationFrame || win.setTimeout;
-
-  this.model = model;
-
-  this.renderQueued = false;
-  this.mountRenderRequested = false;
-  this.componentRendersRequested = undefined;
-  this.id = ++lastId;
-  this.mounted = true;
-  this.router = router
-}
-
-Mount.prototype.refreshify = function(fn, options) {
-  if (!fn) {
-    return fn;
-  }
-
-  if (options && (options.norefresh == true || options.refresh == false)) {
-    return fn;
-  }
-
-  var self = this
-
-  return function () {
-    var result = fn.apply(this, arguments);
-    return refreshEventResult(result, self, options);
-  };
-}
-
-Mount.prototype.transformFunctionAttribute = function(key, value) {
-  return this.refreshify(value)
-};
-
-Mount.prototype.queueRender = function () {
-  if (!this.renderQueued) {
-    var self = this;
-
-    var requestRender = this.requestRender;
-    this.renderQueued = true;
-
-    requestRender(function () {
-      self.renderQueued = false;
-
-      if (self.mounted) {
-        if (self.mountRenderRequested) {
-          self.refreshImmediately()
-        } else if (self.componentRendersRequested) {
-          self.refreshComponentsImmediately()
-        }
-      }
-    });
-  }
-};
-
-Mount.prototype.render = function() {
-  if (this.router) {
-    this.setupModelComponent(this.model)
-    return this.router.render(this.model)
-  } else {
-    return this.renderComponent(this.model)
-  }
-};
-
-Mount.prototype.refresh = function () {
-  this.mountRenderRequested = true;
-  this.queueRender();
-};
-
-Mount.prototype.refreshImmediately = function() {
-  var self = this
-
-  runRender(self, function () {
-    var vdom = self.render();
-    self.component.update(vdom);
-    self.mountRenderRequested = false;
-  })
-}
-
-Mount.prototype.refreshComponentsImmediately = function() {
-  var self = this
-
-  runRender(self, function () {
-    for (var i = 0, l = self.componentRendersRequested.length; i < l; i++) {
-      var w = self.componentRendersRequested[i];
-      w.refresh();
-    }
-    self.componentRendersRequested = undefined;
-  })
-}
-
-Mount.prototype.refreshComponent = function (component) {
-  if (!this.componentRendersRequested) {
-    this.componentRendersRequested = [];
-  }
-
-  this.componentRendersRequested.push(component);
-  this.queueRender();
-};
-
-Mount.prototype.setupModelComponent = function(model) {
-  var self = this;
-
-  var meta = hyperdomMeta(model);
-
-  if (!meta.mount) {
-    meta.mount = this;
-    meta.components = new Set();
-
-    model.refresh = function () {
-      self.refresh();
-    };
-
-    model.refreshImmediately = function () {
-      self.refreshImmediately();
-    };
-
-    model.refreshComponent = function() {
-      var meta = hyperdomMeta(this);
-      meta.components.forEach(function (w) {
-        self.refreshComponent(w);
-      });
-    };
-
-    if (typeof model.onload == 'function') {
-      this.refreshify(function () { return model.onload(); }, {refresh: 'promise'})();
-    }
-  }
-}
-
-Mount.prototype._renderComponent = function(model) {
-  this.setupModelComponent(model)
-  var vdom = typeof model.render == 'function'? model.render(): new vtext(JSON.stringify(model))
-
-  if (vdom instanceof Array) {
-    console.error('vdom returned from component cannot be an array, component: ', model)
-    throw new Error('vdom returned from component cannot be an array');
-  }
-
-  if (vdom) {
-    if (!vdom.properties) {
-      vdom.properties = {};
-    }
-
-    vdom.properties._hyperdomMeta = new PropertyHook({
-      component: model,
-      render: runRender.currentRender()
-    });
-  }
-
-  return vdom;
-}
-
-Mount.prototype.renderComponent = function(model) {
-  if (typeof model.renderCacheKey === 'function') {
-    var meta = hyperdomMeta(model);
-    var key = model.renderCacheKey();
-    if (key !== undefined && meta.cacheKey === key && meta.cachedVdom) {
-      return meta.cachedVdom;
-    } else {
-      meta.cacheKey = key;
-      return meta.cachedVdom = this._renderComponent(model);
-    }
-  } else {
-    return this._renderComponent(model);
-  }
-};
-
-Mount.prototype.detach = function () {
-  this.mounted = false;
-};
-
-Mount.prototype.remove = function () {
-  if (this.router) {
-    this.router.reset()
-  }
-  this.component.destroy({removeElement: true});
-  this.mounted = false;
-};
-
-module.exports = Mount;
-
-},{"./meta":17,"./propertyHook":20,"./refreshEventResult":22,"./render":24,"./set":26,"virtual-dom/vnode/vtext.js":76}],19:[function(require,module,exports){
-var render = require('./render');
-var bindModel = require('./bindModel')
-
-module.exports = function(tag, attributes, childElements) {
-  var keys = Object.keys(attributes);
-  var dataset;
-  var currentRender = render.currentRender();
-
-  for (var k = 0; k < keys.length; k++) {
-    var key = keys[k];
-    var attribute = attributes[key];
-
-    if (typeof(attribute) == 'function' && currentRender) {
-      attributes[key] = currentRender.transformFunctionAttribute(key, attribute)
-    }
-
-    var rename = renames[key];
-    if (rename) {
-      attributes[rename] = attribute;
-      delete attributes[key];
-      continue;
-    }
-
-    if (dataAttributeRegex.test(key)) {
-      if (!dataset) {
-        dataset = attributes.dataset;
-
-        if (!dataset) {
-          dataset = attributes.dataset = {};
-        }
-      }
-
-      var datakey = key
-        .replace(dataAttributeRegex, '')
-        .replace(/-([a-z])/ig, function(_, x) { return x.toUpperCase(); });
-
-      dataset[datakey] = attribute;
-      delete attributes[key];
-      continue;
-    }
-  }
-
-  if (attributes.__source) {
-    if (!dataset) {
-      dataset = attributes.dataset;
-
-      if (!dataset) {
-        dataset = attributes.dataset = {};
-      }
-    }
-
-    dataset.fileName = attributes.__source.fileName;
-    dataset.lineNumber = attributes.__source.lineNumber;
-  }
-
-  if (attributes.className) {
-    attributes.className = generateClassName(attributes.className);
-  }
-
-  if (attributes.binding) {
-    bindModel(tag, attributes, childElements);
-    delete attributes.binding;
-  }
-
-  return attributes
-}
-
-var renames = {
-  for: 'htmlFor',
-  class: 'className',
-  contenteditable: 'contentEditable',
-  tabindex: 'tabIndex',
-  colspan: 'colSpan'
-};
-
-var dataAttributeRegex = /^data-/;
-
-function generateClassName(obj) {
-  if (typeof(obj) == 'object') {
-    if (obj instanceof Array) {
-      var names = obj.map(function(item) {
-        return generateClassName(item);
-      });
-      return names.join(' ') || undefined;
-    } else {
-      return generateConditionalClassNames(obj);
-    }
-  } else {
-    return obj;
-  }
-}
-
-function generateConditionalClassNames(obj) {
-  return Object.keys(obj).filter(function (key) {
-    return obj[key];
-  }).join(' ') || undefined;
-}
-
-},{"./bindModel":9,"./render":24}],20:[function(require,module,exports){
-function PropertyHook(value) {
-  this.value = value;
-}
-
-PropertyHook.prototype.hook = function (element, property) {
-  element[property] = this.value;
-};
-
-PropertyHook.prototype.unhook = function (element, property) {
-  delete element[property];
-};
-
-module.exports = PropertyHook;
-
-},{}],21:[function(require,module,exports){
-var deprecations = require('./deprecations');
-var refreshify = require('./refreshify');
-
-module.exports = function(promise) {
-  deprecations.refreshAfter('hyperdom.html.refreshAfter is deprecated');
-  refreshify(function() { return promise }, {refresh: 'promise'})()
-}
-
-},{"./deprecations":12,"./refreshify":23}],22:[function(require,module,exports){
-var deprecations = require('./deprecations');
-
-module.exports = refreshAfterEvent
-
-var norefresh = {};
-
-function norefreshFunction() {
-  return norefresh;
-}
-
-module.exports.norefresh = norefreshFunction
-
-function refreshAfterEvent(result, mount, options) {
-  var onlyRefreshAfterPromise = options && options.refresh == 'promise';
-  var componentToRefresh = options && options.component;
-
-  if (result && typeof(result.then) == 'function') {
-    result.then(function (result) {
-      var opts = cloneOptions(options)
-      opts.refresh = undefined
-      refreshAfterEvent(result, mount, opts);
-    });
-  }
-
-  if (onlyRefreshAfterPromise) {
-    return;
-  }
-
-  if (isComponent(result)) {
-    mount.refreshComponent(result);
-  } else if (result instanceof Array) {
-    for (var i = 0; i < result.length; i++) {
-      refreshAfterEvent(result[i], mount, options);
-    }
-  } else if (componentToRefresh) {
-    if (componentToRefresh.refreshComponent) {
-      componentToRefresh.refreshComponent()
-    } else {
-      componentToRefresh.refresh();
-    }
-  } else if (result === norefresh) {
-    // don't refresh;
-  } else if (result === norefreshFunction) {
-    deprecations.norefresh('hyperdom.norefresh is deprecated, please use hyperdom.norefresh()');
-    // don't refresh;
-  } else {
-    mount.refresh();
-    return result;
-  }
-}
-
-function isComponent(component) {
-  return component
-    && ((typeof component.init === 'function'
-       && typeof component.update === 'function'
-       && typeof component.destroy === 'function') || (typeof component.refreshComponent === 'function'));
-}
-
-function cloneOptions(options) {
-  if (options) {
-    return {
-      norefresh: options.norefresh,
-      refresh: options.refresh,
-      component: options.component,
-    }
-  } else {
-    return {}
-  }
-}
-
-},{"./deprecations":12}],23:[function(require,module,exports){
-var render = require('./render');
-
-module.exports = function(fn, options) {
-  return render.currentRender().mount.refreshify(fn, options)
-}
-
-},{"./render":24}],24:[function(require,module,exports){
-var simplePromise = require('./simplePromise');
-
-function runRender(mount, fn) {
-  var render = new Render(mount);
-
-  try {
-    runRender._currentRender = render;
-
-    return fn();
-  } finally {
-    render.finished.fulfill();
-    runRender._currentRender = undefined;
-  }
-}
-
-function Render(mount) {
-  this.finished = simplePromise();
-  this.mount = mount;
-  this.attachment = mount;
-}
-
-Render.prototype.transformFunctionAttribute = function() {
-  return this.mount.transformFunctionAttribute.apply(this.mount, arguments)
-}
-
-module.exports = runRender
-
-runRender.currentRender = function () {
-  return runRender._currentRender || defaultRender;
-};
-
-var defaultRender = {
-  mount: {
-    renderComponent: function(model) { return model.render() },
-    refreshify: function(fn) { return fn }
-  },
-
-  transformFunctionAttribute: function (key, value) {
-    return value
-  }
-}
-
-},{"./simplePromise":27}],25:[function(require,module,exports){
-var vhtml = require('./vhtml');
-var domComponent = require('./domComponent');
-var bindingMeta = require('./meta');
-var toVdom = require('./toVdom');
-var parseTag = require('virtual-dom/virtual-hyperscript/parse-tag');
-var Mount = require('./mount');
-var render = require('./render');
-var deprecations = require('./deprecations');
-var prepareAttributes = require('./prepareAttributes')
-var binding = require('./binding')
-var refreshAfter = require('./refreshAfter')
-var refreshEventResult = require('./refreshEventResult')
-
-exports.append = function (element, render, model, options) {
-  return startAttachment(render, model, options, function(mount, domComponentOptions) {
-    var component = domComponent.create(domComponentOptions);
-    var vdom = mount.render();
-    element.appendChild(component.create(vdom));
-    return component;
-  });
-};
-
-exports.replace = function (element, render, model, options) {
-  return startAttachment(render, model, options, function(mount, domComponentOptions) {
-    var component = domComponent.create(domComponentOptions);
-    var vdom = mount.render();
-    element.parentNode.replaceChild(component.create(vdom), element);
-    return component;
-  });
-};
-
-exports.appendVDom = function (vdom, render, model, options) {
-  return startAttachment(render, model, options, function(mount) {
-    var component = {
-      create: function(newVDom) {
-        vdom.children = [];
-        if (newVDom) {
-          vdom.children.push(newVDom);
-        }
-      },
-      update: function(newVDom) {
-        vdom.children = [];
-        if (newVDom) {
-          vdom.children.push(newVDom);
-        }
-      }
-    };
-    component.create(mount.render());
-    return component;
-  });
-};
-
-function startAttachment(render, model, options, attachToDom) {
-  if (typeof render == 'object') {
-    return start(render, attachToDom, model);
-  } else {
-    deprecations.renderFunction('hyperdom.append and hyperdom.replace with render functions are deprecated, please pass a component');
-    return start({render: function () { return render(model); }}, attachToDom, options);
-  }
-}
-
-function start(model, attachToDom, options) {
-  var mount = new Mount(model, options);
-  render(mount, function () {
-    if (options) {
-      var domComponentOptions = {document: options.document};
-    }
-    mount.component = attachToDom(mount, domComponentOptions);
-  });
-  return mount;
-}
-
-/**
- * this function is quite ugly and you may be very tempted
- * to refactor it into smaller functions, I certainly am.
- * however, it was written like this for performance
- * so think of that before refactoring! :)
- */
-exports.html = function (hierarchySelector) {
-  var hasHierarchy = hierarchySelector.indexOf(' ') >= 0;
-  var selector, selectorElements;
-
-  if (hasHierarchy) {
-    selectorElements = hierarchySelector.match(/\S+/g);
-    selector = selectorElements[selectorElements.length - 1];
-  } else {
-    selector = hierarchySelector;
-  }
-
-  var childElements;
-  var vdom;
-  var tag;
-  var attributes = arguments[1];
-
-  if (attributes && attributes.constructor == Object && typeof attributes.render !== 'function') {
-    childElements = toVdom.recursive(Array.prototype.slice.call(arguments, 2));
-    prepareAttributes(selector, attributes, childElements);
-    tag = parseTag(selector, attributes);
-    vdom = vhtml(tag, attributes, childElements);
-  } else {
-    attributes = {};
-    childElements = toVdom.recursive(Array.prototype.slice.call(arguments, 1));
-    tag = parseTag(selector, attributes);
-    vdom = vhtml(tag, attributes, childElements);
-  }
-
-  if (hasHierarchy) {
-    for(var n = selectorElements.length - 2; n >= 0; n--) {
-      vdom = vhtml(selectorElements[n], {}, [vdom]);
-    }
-  }
-
-  return vdom;
-};
-
-exports.jsx = function (tag, attributes) {
-  var childElements = toVdom.recursive(Array.prototype.slice.call(arguments, 2));
-  if (attributes) {
-    prepareAttributes(tag, attributes, childElements);
-  }
-  return vhtml(tag, attributes || {}, childElements);
-};
-
-Object.defineProperty(exports.html, 'currentRender', {get: function () {
-  deprecations.currentRender('hyperdom.html.currentRender is deprecated, please use hyperdom.currentRender() instead');
-  return render._currentRender;
-}});
-
-Object.defineProperty(exports.html, 'refresh', {get: function () {
-  deprecations.refresh('hyperdom.html.refresh is deprecated, please use component.refresh() instead');
-  if (render._currentRender) {
-    var currentRender = render._currentRender
-    return function(result) {
-      refreshEventResult(result, currentRender.mount)
-    }
-  } else {
-    throw new Error('Please assign hyperdom.html.refresh during a render cycle if you want to use it in event handlers. See https://github.com/featurist/hyperdom#refresh-outside-render-cycle');
-  }
-}});
-
-Object.defineProperty(exports.html, 'norefresh', {get: function () {
-  deprecations.refresh('hyperdom.html.norefresh is deprecated, please use hyperdom.norefresh() instead');
-  return refreshEventResult.norefresh
-}});
-
-Object.defineProperty(exports.html, 'binding', {get: function () {
-  deprecations.refresh('hyperdom.html.binding() is deprecated, please use hyperdom.binding() instead');
-  return binding
-}});
-
-Object.defineProperty(exports.html, 'refreshAfter', {get: function () {
-  deprecations.refresh("hyperdom.html.refreshAfter() is deprecated, please use require('hyperdom/refreshAfter')() instead");
-  return refreshAfter
-}});
-
-exports.html.meta = bindingMeta;
-
-function rawHtml() {
-  var selector;
-  var html;
-  var options;
-
-  if (arguments.length == 2) {
-    selector = arguments[0];
-    html = arguments[1];
-    options = {innerHTML: html};
-    return exports.html(selector, options);
-  } else {
-    selector = arguments[0];
-    options = arguments[1];
-    html = arguments[2];
-    options.innerHTML = html;
-    return exports.html(selector, options);
-  }
-}
-
-exports.html.rawHtml = rawHtml;
-
-},{"./binding":10,"./deprecations":12,"./domComponent":13,"./meta":17,"./mount":18,"./prepareAttributes":19,"./refreshAfter":21,"./refreshEventResult":22,"./render":24,"./toVdom":28,"./vhtml":29,"virtual-dom/virtual-hyperscript/parse-tag":66}],26:[function(require,module,exports){
-if (typeof Set === 'function') {
-  module.exports = Set;
-} else {
-  module.exports = function() {
-    this.items = [];
-  };
-
-  module.exports.prototype.add = function(widget) {
-    if (this.items.indexOf(widget) == -1) {
-      this.items.push(widget);
-    }
-  };
-
-  module.exports.prototype.delete = function(widget) {
-    var i = this.items.indexOf(widget);
-    if (i !== -1) {
-      this.items.splice(i, 1);
-    }
-  };
-
-  module.exports.prototype.forEach = function(fn) {
-    for(var n = 0; n < this.items.length; n++) {
-      fn(this.items[n]);
-    }
-  };
-}
-
-},{}],27:[function(require,module,exports){
-function SimplePromise () {
-  this.listeners = [];
-}
-
-SimplePromise.prototype.fulfill = function (value) {
-  if (!this.isFulfilled) {
-    this.isFulfilled = true;
-    this.value = value;
-    this.listeners.forEach(function (listener) {
-      listener();
-    });
-  }
-};
-
-SimplePromise.prototype.then = function (success) {
-  if (this.isFulfilled) {
-    success(this.value);
-  } else {
-    this.listeners.push(success);
-  }
-};
-
-module.exports = function () {
-  return new SimplePromise();
-};
-
-},{}],28:[function(require,module,exports){
-var vtext = require("virtual-dom/vnode/vtext.js")
-var isVdom = require('./isVdom');
-var Component = require('./component')
-
-function toVdom(object) {
-  if (object === undefined || object === null) {
-    return new vtext('');
-  } else if (typeof(object) != 'object') {
-    return new vtext(String(object));
-  } else if (object instanceof Date) {
-    return new vtext(String(object));
-  } else if (object instanceof Error) {
-    return new vtext(object.toString());
-  } else if (isVdom(object)) {
-    return object;
-  } else if (typeof object.render === 'function') {
-    return new Component(object);
-  } else {
-    return new vtext(JSON.stringify(object));
-  }
-}
-
-module.exports = toVdom;
-
-function addChild(children, child) {
-  if (child instanceof Array) {
-    for (var n = 0; n < child.length; n++) {
-      addChild(children, child[n]);
-    }
-  } else {
-    children.push(toVdom(child));
-  }
-}
-
-module.exports.recursive = function (child) {
-  var children = [];
-  addChild(children, child);
-  return children;
-};
-
-},{"./component":11,"./isVdom":15,"virtual-dom/vnode/vtext.js":76}],29:[function(require,module,exports){
-'use strict';
-
-var VNode = require('virtual-dom/vnode/vnode.js');
-var isHook = require('virtual-dom/vnode/is-vhook');
-var xml = require('./xml')
-
-var softSetHook = require('virtual-dom/virtual-hyperscript/hooks/soft-set-hook.js');
-
-module.exports = h;
-
-function h(tagName, props, children) {
-  var tag = tagName;
-
-  // support keys
-  if (props.hasOwnProperty('key')) {
-    var key = props.key;
-    props.key = undefined;
-  }
-
-  // support namespace
-  if (props.hasOwnProperty('namespace')) {
-    var namespace = props.namespace;
-    props.namespace = undefined;
-  }
-
-  // fix cursor bug
-  if (tag.toLowerCase() === 'input' &&
-    !namespace &&
-    props.hasOwnProperty('value') &&
-    props.value !== undefined &&
-    !isHook(props.value)
-  ) {
-    props.value = softSetHook(props.value);
-  }
-
-  var vnode = new VNode(tag, props, children, key, namespace);
-
-  if (props.xmlns) {
-    xml.transform(vnode)
-  }
-
-  return vnode
-}
-
-},{"./xml":30,"virtual-dom/virtual-hyperscript/hooks/soft-set-hook.js":65,"virtual-dom/vnode/is-vhook":69,"virtual-dom/vnode/vnode.js":74}],30:[function(require,module,exports){
-var AttributeHook = require('virtual-dom/virtual-hyperscript/hooks/attribute-hook')
-
-var namespaceRegex = /^([a-z0-9_-]+)(--|:)([a-z0-9_-]+)$/i
-var xmlnsRegex = /^xmlns(--|:)([a-z0-9_-]+)$/i
-
-function transformTanName(vnode, namespaces) {
-  var tagNamespace = namespaceRegex.exec(vnode.tagName)
-  if (tagNamespace) {
-    var namespaceKey = tagNamespace[1]
-    var namespace = namespaces[namespaceKey]
-    if (namespace) {
-      vnode.tagName = tagNamespace[1] + ':' + tagNamespace[3]
-      vnode.namespace = namespace
-    }
-  } else if (!vnode.namespace) {
-    vnode.namespace = namespaces['']
-  }
-}
-
-function transformProperties(vnode, namespaces) {
-  var properties = vnode.properties
-
-  if (properties) {
-    var attributes = properties.attributes || (properties.attributes = {})
-
-    var keys = Object.keys(properties);
-    for (var k = 0, l = keys.length; k < l; k++) {
-      var key = keys[k];
-      if (key != 'style' && key != 'attributes') {
-        var match = namespaceRegex.exec(key)
-        if (match) {
-          properties[match[1] + ':' + match[3]] = new AttributeHook(namespaces[match[1]], properties[key])
-          delete properties[key]
-        } else {
-          var property = properties[key];
-          var type = typeof property;
-          if (type === 'string' || type === 'number' || type === 'boolean') {
-            attributes[key] = property;
-          }
-        }
-      }
-    }
-  }
-}
-
-function declaredNamespaces(vnode) {
-  var namespaces = {
-    '': vnode.properties.xmlns,
-    xmlns: 'http://www.w3.org/2000/xmlns/'
-  }
-
-  var keys = Object.keys(vnode.properties)
-
-  for (var k = 0, l = keys.length; k < l; k++) {
-    var key = keys[k];
-    var value = vnode.properties[key]
-
-    if (key == 'xmlns') {
-      namespaces[''] = value
-    } else {
-      var match = xmlnsRegex.exec(key)
-
-      if (match) {
-        namespaces[match[2]] = value
-      }
-    }
-  }
-
-  return namespaces
-}
-
-function transform(vnode) {
-  var namespaces = declaredNamespaces(vnode)
-
-  function transformChildren(vnode, namespaces) {
-    transformTanName(vnode, namespaces)
-    transformProperties(vnode, namespaces)
-
-    if (vnode.children) {
-      for (var c = 0, l = vnode.children.length; c < l; c++) {
-        var child = vnode.children[c];
-        if (!(child.properties && child.properties.xmlns)) {
-          transformChildren(child, namespaces)
-        }
-      }
-    }
-  }
-
-  transformChildren(vnode, namespaces)
-
-  return vnode
-}
-
-module.exports.transform = transform
-
-},{"virtual-dom/virtual-hyperscript/hooks/attribute-hook":64}],31:[function(require,module,exports){
 var listener = require('./listener')
 var binding = require('./binding')
 var RefreshHook = require('./render').RefreshHook
@@ -1903,7 +549,7 @@ function customEvent (name) {
   }
 }
 
-},{"./binding":32,"./listener":39,"./render":46}],32:[function(require,module,exports){
+},{"./binding":10,"./listener":17,"./render":24}],10:[function(require,module,exports){
 var meta = require('./meta')
 
 module.exports = function (b) {
@@ -1941,7 +587,7 @@ function bindingObject (model, property, setter) {
   }
 }
 
-},{"./meta":40}],33:[function(require,module,exports){
+},{"./meta":18}],11:[function(require,module,exports){
 var hyperdomMeta = require('./meta')
 var render = require('./render')
 
@@ -2079,7 +725,7 @@ Component.prototype.destroy = function (element) {
 
 module.exports = Component
 
-},{"./meta":40,"./render":46}],34:[function(require,module,exports){
+},{"./meta":18,"./render":24}],12:[function(require,module,exports){
 function deprecationWarning () {
   var warningIssued = false
 
@@ -2101,7 +747,7 @@ module.exports = {
   viewComponent: deprecationWarning()
 }
 
-},{}],35:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 var createElement = require('virtual-dom/create-element')
 var diff = require('virtual-dom/diff')
 var patch = require('virtual-dom/patch')
@@ -2160,7 +806,7 @@ function domComponent (options) {
 
 exports.create = domComponent
 
-},{"./isVdom":37,"./toVdom":50,"virtual-dom/create-element":55,"virtual-dom/diff":56,"virtual-dom/patch":57}],36:[function(require,module,exports){
+},{"./isVdom":15,"./toVdom":28,"virtual-dom/create-element":33,"virtual-dom/diff":34,"virtual-dom/patch":35}],14:[function(require,module,exports){
 var rendering = require('./rendering')
 var render = require('./render')
 var viewComponent = require('./viewComponent')
@@ -2187,7 +833,7 @@ exports.component = function (model) {
 
 exports.currentRender = render.currentRender
 
-},{"./binding":32,"./deprecations":34,"./join":38,"./meta":40,"./refreshEventResult":45,"./render":46,"./rendering":47,"./viewComponent":52}],37:[function(require,module,exports){
+},{"./binding":10,"./deprecations":12,"./join":16,"./meta":18,"./refreshEventResult":23,"./render":24,"./rendering":25,"./viewComponent":30}],15:[function(require,module,exports){
 var virtualDomVersion = require('virtual-dom/vnode/version')
 
 module.exports = function (x) {
@@ -2199,7 +845,7 @@ module.exports = function (x) {
   }
 }
 
-},{"virtual-dom/vnode/version":73}],38:[function(require,module,exports){
+},{"virtual-dom/vnode/version":51}],16:[function(require,module,exports){
 module.exports = function join (array, separator) {
   var output = []
   for (var i = 0, l = array.length; i < l; i++) {
@@ -2212,7 +858,7 @@ module.exports = function join (array, separator) {
   return output
 }
 
-},{}],39:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 var refreshify = require('./render').refreshify
 
 function ListenerHook (listener) {
@@ -2231,7 +877,7 @@ module.exports = function (listener) {
   return new ListenerHook(listener)
 }
 
-},{"./render":46}],40:[function(require,module,exports){
+},{"./render":24}],18:[function(require,module,exports){
 module.exports = function (model, property) {
   var hyperdomMeta = model._hyperdomMeta
 
@@ -2253,7 +899,7 @@ module.exports = function (model, property) {
   }
 }
 
-},{}],41:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 var hyperdomMeta = require('./meta')
 var runRender = require('./render')
 var domComponent = require('./domComponent')
@@ -2452,7 +1098,7 @@ Mount.prototype.remove = function () {
 
 module.exports = Mount
 
-},{"./domComponent":35,"./meta":40,"./propertyHook":43,"./refreshEventResult":45,"./render":46,"./set":48,"virtual-dom/vnode/vtext.js":76}],42:[function(require,module,exports){
+},{"./domComponent":13,"./meta":18,"./propertyHook":21,"./refreshEventResult":23,"./render":24,"./set":26,"virtual-dom/vnode/vtext.js":54}],20:[function(require,module,exports){
 var render = require('./render')
 var bindModel = require('./bindModel')
 
@@ -2551,7 +1197,7 @@ function generateConditionalClassNames (obj) {
   }).join(' ') || undefined
 }
 
-},{"./bindModel":31,"./render":46}],43:[function(require,module,exports){
+},{"./bindModel":9,"./render":24}],21:[function(require,module,exports){
 function PropertyHook (value) {
   this.value = value
 }
@@ -2566,7 +1212,7 @@ PropertyHook.prototype.unhook = function (element, property) {
 
 module.exports = PropertyHook
 
-},{}],44:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 var render = require('./render')
 var refreshEventResult = require('./refreshEventResult')
 
@@ -2574,7 +1220,7 @@ module.exports = function (promise) {
   refreshEventResult(promise, render.currentRender().mount, {refresh: 'promise'})
 }
 
-},{"./refreshEventResult":45,"./render":46}],45:[function(require,module,exports){
+},{"./refreshEventResult":23,"./render":24}],23:[function(require,module,exports){
 var deprecations = require('./deprecations')
 
 module.exports = refreshEventResult
@@ -2645,7 +1291,7 @@ function cloneOptions (options) {
   }
 }
 
-},{"./deprecations":34}],46:[function(require,module,exports){
+},{"./deprecations":12}],24:[function(require,module,exports){
 var simplePromise = require('./simplePromise')
 
 function runRender (mount, fn) {
@@ -2713,7 +1359,7 @@ RefreshHook.prototype.unhook = function (node, property) {
   node[property] = null
 }
 
-},{"./simplePromise":49}],47:[function(require,module,exports){
+},{"./simplePromise":27}],25:[function(require,module,exports){
 var vhtml = require('./vhtml')
 var domComponent = require('./domComponent')
 var bindingMeta = require('./meta')
@@ -2897,7 +1543,7 @@ function rawHtml () {
 
 exports.html.rawHtml = rawHtml
 
-},{"./binding":32,"./component":33,"./deprecations":34,"./domComponent":35,"./meta":40,"./mount":41,"./prepareAttributes":42,"./refreshAfter":44,"./refreshEventResult":45,"./render":46,"./toVdom":50,"./vhtml":51,"virtual-dom/virtual-hyperscript/parse-tag":66}],48:[function(require,module,exports){
+},{"./binding":10,"./component":11,"./deprecations":12,"./domComponent":13,"./meta":18,"./mount":19,"./prepareAttributes":20,"./refreshAfter":22,"./refreshEventResult":23,"./render":24,"./toVdom":28,"./vhtml":29,"virtual-dom/virtual-hyperscript/parse-tag":44}],26:[function(require,module,exports){
 if (typeof Set === 'function') {
   module.exports = Set
 } else {
@@ -2925,7 +1571,7 @@ if (typeof Set === 'function') {
   }
 }
 
-},{}],49:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 function SimplePromise () {
   this.listeners = []
 }
@@ -2952,7 +1598,7 @@ module.exports = function () {
   return new SimplePromise()
 }
 
-},{}],50:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 var Vtext = require('virtual-dom/vnode/vtext.js')
 var isVdom = require('./isVdom')
 var Component = require('./component')
@@ -2993,7 +1639,7 @@ module.exports.recursive = function (child) {
   return children
 }
 
-},{"./component":33,"./isVdom":37,"virtual-dom/vnode/vtext.js":76}],51:[function(require,module,exports){
+},{"./component":11,"./isVdom":15,"virtual-dom/vnode/vtext.js":54}],29:[function(require,module,exports){
 'use strict'
 
 var VNode = require('virtual-dom/vnode/vnode.js')
@@ -3038,14 +1684,14 @@ function h (tagName, props, children) {
   return vnode
 }
 
-},{"./xml":53,"virtual-dom/virtual-hyperscript/hooks/soft-set-hook.js":65,"virtual-dom/vnode/is-vhook":69,"virtual-dom/vnode/vnode.js":74}],52:[function(require,module,exports){
+},{"./xml":31,"virtual-dom/virtual-hyperscript/hooks/soft-set-hook.js":43,"virtual-dom/vnode/is-vhook":47,"virtual-dom/vnode/vnode.js":52}],30:[function(require,module,exports){
 var Component = require('./component')
 
 module.exports = function (model) {
   return new Component(model, {viewComponent: true})
 }
 
-},{"./component":33}],53:[function(require,module,exports){
+},{"./component":11}],31:[function(require,module,exports){
 var AttributeHook = require('virtual-dom/virtual-hyperscript/hooks/attribute-hook')
 
 var namespaceRegex = /^([a-z0-9_-]+)(--|:)([a-z0-9_-]+)$/i
@@ -3141,29 +1787,29 @@ function transform (vnode) {
 
 module.exports.transform = transform
 
-},{"virtual-dom/virtual-hyperscript/hooks/attribute-hook":64}],54:[function(require,module,exports){
+},{"virtual-dom/virtual-hyperscript/hooks/attribute-hook":42}],32:[function(require,module,exports){
 "use strict";
 
 module.exports = function isObject(x) {
 	return typeof x === "object" && x !== null;
 };
 
-},{}],55:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 var createElement = require("./vdom/create-element.js")
 
 module.exports = createElement
 
-},{"./vdom/create-element.js":59}],56:[function(require,module,exports){
+},{"./vdom/create-element.js":37}],34:[function(require,module,exports){
 var diff = require("./vtree/diff.js")
 
 module.exports = diff
 
-},{"./vtree/diff.js":78}],57:[function(require,module,exports){
+},{"./vtree/diff.js":56}],35:[function(require,module,exports){
 var patch = require("./vdom/patch.js")
 
 module.exports = patch
 
-},{"./vdom/patch.js":62}],58:[function(require,module,exports){
+},{"./vdom/patch.js":40}],36:[function(require,module,exports){
 var isObject = require("is-object")
 var isHook = require("../vnode/is-vhook.js")
 
@@ -3262,7 +1908,7 @@ function getPrototype(value) {
     }
 }
 
-},{"../vnode/is-vhook.js":69,"is-object":54}],59:[function(require,module,exports){
+},{"../vnode/is-vhook.js":47,"is-object":32}],37:[function(require,module,exports){
 var document = require("global/document")
 
 var applyProperties = require("./apply-properties")
@@ -3310,7 +1956,7 @@ function createElement(vnode, opts) {
     return node
 }
 
-},{"../vnode/handle-thunk.js":67,"../vnode/is-vnode.js":70,"../vnode/is-vtext.js":71,"../vnode/is-widget.js":72,"./apply-properties":58,"global/document":6}],60:[function(require,module,exports){
+},{"../vnode/handle-thunk.js":45,"../vnode/is-vnode.js":48,"../vnode/is-vtext.js":49,"../vnode/is-widget.js":50,"./apply-properties":36,"global/document":6}],38:[function(require,module,exports){
 // Maps a virtual DOM tree onto a real DOM tree in an efficient manner.
 // We don't want to read all of the DOM nodes in the tree so we use
 // the in-order tree indexing to eliminate recursion down certain branches.
@@ -3397,7 +2043,7 @@ function ascending(a, b) {
     return a > b ? 1 : -1
 }
 
-},{}],61:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 var applyProperties = require("./apply-properties")
 
 var isWidget = require("../vnode/is-widget.js")
@@ -3550,7 +2196,7 @@ function replaceRoot(oldRoot, newRoot) {
     return newRoot;
 }
 
-},{"../vnode/is-widget.js":72,"../vnode/vpatch.js":75,"./apply-properties":58,"./update-widget":63}],62:[function(require,module,exports){
+},{"../vnode/is-widget.js":50,"../vnode/vpatch.js":53,"./apply-properties":36,"./update-widget":41}],40:[function(require,module,exports){
 var document = require("global/document")
 var isArray = require("x-is-array")
 
@@ -3632,7 +2278,7 @@ function patchIndices(patches) {
     return indices
 }
 
-},{"./create-element":59,"./dom-index":60,"./patch-op":61,"global/document":6,"x-is-array":79}],63:[function(require,module,exports){
+},{"./create-element":37,"./dom-index":38,"./patch-op":39,"global/document":6,"x-is-array":57}],41:[function(require,module,exports){
 var isWidget = require("../vnode/is-widget.js")
 
 module.exports = updateWidget
@@ -3649,7 +2295,7 @@ function updateWidget(a, b) {
     return false
 }
 
-},{"../vnode/is-widget.js":72}],64:[function(require,module,exports){
+},{"../vnode/is-widget.js":50}],42:[function(require,module,exports){
 'use strict';
 
 module.exports = AttributeHook;
@@ -3686,7 +2332,7 @@ AttributeHook.prototype.unhook = function (node, prop, next) {
 
 AttributeHook.prototype.type = 'AttributeHook';
 
-},{}],65:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 'use strict';
 
 module.exports = SoftSetHook;
@@ -3705,7 +2351,7 @@ SoftSetHook.prototype.hook = function (node, propertyName) {
     }
 };
 
-},{}],66:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 'use strict';
 
 var split = require('browser-split');
@@ -3761,7 +2407,7 @@ function parseTag(tag, props) {
     return props.namespace ? tagName : tagName.toUpperCase();
 }
 
-},{"browser-split":5}],67:[function(require,module,exports){
+},{"browser-split":5}],45:[function(require,module,exports){
 var isVNode = require("./is-vnode")
 var isVText = require("./is-vtext")
 var isWidget = require("./is-widget")
@@ -3803,14 +2449,14 @@ function renderThunk(thunk, previous) {
     return renderedThunk
 }
 
-},{"./is-thunk":68,"./is-vnode":70,"./is-vtext":71,"./is-widget":72}],68:[function(require,module,exports){
+},{"./is-thunk":46,"./is-vnode":48,"./is-vtext":49,"./is-widget":50}],46:[function(require,module,exports){
 module.exports = isThunk
 
 function isThunk(t) {
     return t && t.type === "Thunk"
 }
 
-},{}],69:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 module.exports = isHook
 
 function isHook(hook) {
@@ -3819,7 +2465,7 @@ function isHook(hook) {
        typeof hook.unhook === "function" && !hook.hasOwnProperty("unhook"))
 }
 
-},{}],70:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 var version = require("./version")
 
 module.exports = isVirtualNode
@@ -3828,7 +2474,7 @@ function isVirtualNode(x) {
     return x && x.type === "VirtualNode" && x.version === version
 }
 
-},{"./version":73}],71:[function(require,module,exports){
+},{"./version":51}],49:[function(require,module,exports){
 var version = require("./version")
 
 module.exports = isVirtualText
@@ -3837,17 +2483,17 @@ function isVirtualText(x) {
     return x && x.type === "VirtualText" && x.version === version
 }
 
-},{"./version":73}],72:[function(require,module,exports){
+},{"./version":51}],50:[function(require,module,exports){
 module.exports = isWidget
 
 function isWidget(w) {
     return w && w.type === "Widget"
 }
 
-},{}],73:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 module.exports = "2"
 
-},{}],74:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 var version = require("./version")
 var isVNode = require("./is-vnode")
 var isWidget = require("./is-widget")
@@ -3921,7 +2567,7 @@ function VirtualNode(tagName, properties, children, key, namespace) {
 VirtualNode.prototype.version = version
 VirtualNode.prototype.type = "VirtualNode"
 
-},{"./is-thunk":68,"./is-vhook":69,"./is-vnode":70,"./is-widget":72,"./version":73}],75:[function(require,module,exports){
+},{"./is-thunk":46,"./is-vhook":47,"./is-vnode":48,"./is-widget":50,"./version":51}],53:[function(require,module,exports){
 var version = require("./version")
 
 VirtualPatch.NONE = 0
@@ -3945,7 +2591,7 @@ function VirtualPatch(type, vNode, patch) {
 VirtualPatch.prototype.version = version
 VirtualPatch.prototype.type = "VirtualPatch"
 
-},{"./version":73}],76:[function(require,module,exports){
+},{"./version":51}],54:[function(require,module,exports){
 var version = require("./version")
 
 module.exports = VirtualText
@@ -3957,7 +2603,7 @@ function VirtualText(text) {
 VirtualText.prototype.version = version
 VirtualText.prototype.type = "VirtualText"
 
-},{"./version":73}],77:[function(require,module,exports){
+},{"./version":51}],55:[function(require,module,exports){
 var isObject = require("is-object")
 var isHook = require("../vnode/is-vhook")
 
@@ -4017,7 +2663,7 @@ function getPrototype(value) {
   }
 }
 
-},{"../vnode/is-vhook":69,"is-object":54}],78:[function(require,module,exports){
+},{"../vnode/is-vhook":47,"is-object":32}],56:[function(require,module,exports){
 var isArray = require("x-is-array")
 
 var VPatch = require("../vnode/vpatch")
@@ -4446,7 +3092,7 @@ function appendPatch(apply, patch) {
     }
 }
 
-},{"../vnode/handle-thunk":67,"../vnode/is-thunk":68,"../vnode/is-vnode":70,"../vnode/is-vtext":71,"../vnode/is-widget":72,"../vnode/vpatch":75,"./diff-props":77,"x-is-array":79}],79:[function(require,module,exports){
+},{"../vnode/handle-thunk":45,"../vnode/is-thunk":46,"../vnode/is-vnode":48,"../vnode/is-vtext":49,"../vnode/is-widget":50,"../vnode/vpatch":53,"./diff-props":55,"x-is-array":57}],57:[function(require,module,exports){
 var nativeIsArray = Array.isArray
 var toString = Object.prototype.toString
 
