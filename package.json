@@ -1,0 +1,18 @@
+{
+  "name": "calendar-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node app.js ",
+    "watch": "watchify index.js -o bundle.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.15.2",
+    "hyperdom": "^0.6.0",
+    "hyperdom-calendar": "^1.1.1",
+    "watchify": "^3.9.0"
+  }
+}
